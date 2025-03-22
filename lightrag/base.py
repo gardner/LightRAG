@@ -32,13 +32,14 @@ T = TypeVar("T")
 class QueryParam:
     """Configuration parameters for query execution in LightRAG."""
 
-    mode: Literal["local", "global", "hybrid", "naive", "mix"] = "global"
+    mode: Literal["local", "global", "hybrid", "naive", "mix", "path"] = "global"
     """Specifies the retrieval mode:
     - "local": Focuses on context-dependent information.
     - "global": Utilizes global knowledge.
     - "hybrid": Combines local and global retrieval methods.
     - "naive": Performs a basic search without advanced techniques.
     - "mix": Integrates knowledge graph and vector retrieval.
+    - "path": Uses path-based retrieval for identifying key relational paths between entities.
     """
 
     only_need_context: bool = False
@@ -83,6 +84,13 @@ class QueryParam:
 
     ids: list[str] | None = None
     """List of ids to filter the results."""
+    
+    # Path-based retrieval parameters
+    path_threshold: float = 0.3
+    """Threshold for path pruning in path-based retrieval."""
+    
+    path_decay_rate: float = 0.8
+    """Decay rate (alpha) for spreading activation in path-based retrieval."""
 
 
 @dataclass

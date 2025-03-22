@@ -45,6 +45,7 @@ This repository hosts the code of LightRAG. The structure of this code is based 
     🎉 News
   </summary>
 
+- [X] [2025.03.22]🎯📢LightRAG now supports path-based retrieval through PathRAG integration.
 - [X] [2025.03.18]🎯📢LightRAG now supports citation functionality.
 - [X] [2025.02.05]🎯📢Our team has released [VideoRAG](https://github.com/HKUDS/VideoRAG) understanding extremely long-context videos.
 - [X] [2025.01.13]🎯📢Our team has released [MiniRAG](https://github.com/HKUDS/MiniRAG) making RAG simpler with small models.
@@ -159,12 +160,14 @@ if __name__ == "__main__":
 
 ```python
 class QueryParam:
-    mode: Literal["local", "global", "hybrid", "naive", "mix"] = "global"
+    mode: Literal["local", "global", "hybrid", "naive", "mix", "path"] = "global"
     """Specifies the retrieval mode:
     - "local": Focuses on context-dependent information.
     - "global": Utilizes global knowledge.
     - "hybrid": Combines local and global retrieval methods.
     - "naive": Performs a basic search without advanced techniques.
+    - "mix": Integrates knowledge graph and vector retrieval.
+    - "path": Uses path-based retrieval for identifying key relational paths between entities.
     - "mix": Integrates knowledge graph and vector retrieval. Mix mode combines knowledge graph and vector search:
         - Uses both structured (KG) and unstructured (vector) information
         - Provides comprehensive answers by analyzing relationships and context
@@ -185,6 +188,10 @@ class QueryParam:
     """Maximum number of tokens allocated for entity descriptions in local retrieval."""
     ids: list[str] | None = None # ONLY SUPPORTED FOR PG VECTOR DBs
     """List of ids to filter the RAG."""
+    path_threshold: float = 0.3
+    """Threshold for path pruning in path-based retrieval."""
+    path_decay_rate: float = 0.8
+    """Decay rate (alpha) for spreading activation in path-based retrieval."""
     ...
 ```
 
@@ -441,7 +448,7 @@ conversation_history = [
 
 # Create query parameters with conversation history
 query_param = QueryParam(
-    mode="mix",  # or any other mode: "local", "global", "hybrid"
+    mode="mix",  # or any other mode: "local", "global", "hybrid", "path"
     conversation_history=conversation_history,  # Add the conversation history
     history_turns=3  # Number of recent conversation turns to consider
 )
@@ -463,7 +470,7 @@ LightRAG now supports custom prompts for fine-tuned control over the system's be
 ```python
 # Create query parameters
 query_param = QueryParam(
-    mode="hybrid",  # or other mode: "local", "global", "hybrid", "mix" and "naive"
+    mode="hybrid",  # or other mode: "local", "global", "hybrid", "mix", "naive", "path"
 )
 
 # Example 1: Using the default system prompt
@@ -587,6 +594,87 @@ rag.insert_custom_kg(custom_kg)
 ```
 
 </details>
+
+## Path-based Retrieval with PathRAG
+
+LightRAG now integrates PathRAG's path-based retrieval capabilities for improved relationship finding between entities in a knowledge graph. Path-based retrieval can discover and prioritize key relational paths between entities, making it especially useful for queries about relationships and connections.
+
+### Enabling PathRAG
+
+There are two ways to use path-based retrieval:
+
+1. **Enable globally**: Set `use_pathrag=True` when initializing LightRAG:
+
+```python
+rag = LightRAG(
+    working_dir="./pathrag_demo",
+    embedding_func=openai_embed,
+    llm_model_func=gpt_4o_mini_complete,
+    use_pathrag=True  # Enable PathRAG functionality
+)
+```
+
+2. **Use path mode**: Set `mode="path"` in QueryParam:
+
+```python
+result = rag.query(
+    "What is the relationship between Alice and Bob?", 
+    param=QueryParam(
+        mode="path", 
+        path_threshold=0.3,  # Threshold for path pruning
+        path_decay_rate=0.8  # Decay rate for weighting paths
+    )
+)
+```
+
+### Path-specific Parameters
+
+PathRAG provides additional parameters to tune the path-based retrieval:
+
+- `path_threshold`: Controls the threshold for path pruning (default: 0.3)
+- `path_decay_rate`: Controls the decay rate for weighting longer paths (default: 0.8)
+
+### Example
+
+Here's a complete example of using path-based retrieval:
+
+```python
+import asyncio
+from lightrag import LightRAG, QueryParam
+from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
+
+async def demo_pathrag():
+    # Initialize RAG instance with PathRAG enabled
+    rag = LightRAG(
+        working_dir="./pathrag_demo",
+        embedding_func=openai_embed,
+        llm_model_func=gpt_4o_mini_complete,
+        use_pathrag=True
+    )
+    
+    await rag.initialize_storages()
+    
+    # Sample text with relationships
+    sample_text = """
+    Alice is the CEO of TechCorp. Bob is the CTO of TechCorp and reports directly to Alice.
+    Charlie is a senior developer who works under Bob's supervision.
+    """
+    
+    # Insert the sample text
+    await rag.ainsert(sample_text)
+    
+    # Query using path-based retrieval
+    result = await rag.aquery(
+        "What is the relationship between Alice and Charlie?", 
+        param=QueryParam(mode="path")
+    )
+    print(result)
+
+if __name__ == "__main__":
+    asyncio.run(demo_pathrag())
+```
+
+For a more complete example, see the [PathRAG demo](./examples/lightrag_pathrag_demo.py).
 
 ## Insert
 
@@ -1037,7 +1125,7 @@ await rag.aclear_cache(modes=["local"])
 await rag.aclear_cache(modes=["default"])
 
 # Clear multiple modes
-await rag.aclear_cache(modes=["local", "global", "hybrid"])
+await rag.aclear_cache(modes=["local", "global", "hybrid", "path"])
 
 # Synchronous version
 rag.clear_cache(modes=["local"])
@@ -1065,6 +1153,7 @@ Valid modes are:
 | **kv\_storage**                              | `str`           | Storage type for documents and text chunks. Supported types:`JsonKVStorage`, `OracleKVStorage`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `JsonKVStorage`                                                                                             |
 | **vector\_storage**                          | `str`           | Storage type for embedding vectors. Supported types:`NanoVectorDBStorage`, `OracleVectorDBStorage`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `NanoVectorDBStorage`                                                                                       |
 | **graph\_storage**                           | `str`           | Storage type for graph edges and nodes. Supported types:`NetworkXStorage`, `Neo4JStorage`, `OracleGraphStorage`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `NetworkXStorage`                                                                                           |
+| **use_pathrag**                              | `bool`          | If `TRUE`, enables PathRAG's path-based retrieval for improved relationship finding in queries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `FALSE`                                                                                                     |
 | **chunk\_token\_size**                       | `int`           | Maximum token size per chunk when splitting documents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `1200`                                                                                                      |
 | **chunk\_overlap\_token\_size**              | `int`           | Overlap token size between two chunks when splitting documents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `100`                                                                                                       |
 | **tiktoken\_model\_name**                    | `str`           | Model name for the Tiktoken encoder used to calculate token numbers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `gpt-4o-mini`                                                                                               |

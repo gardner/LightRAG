@@ -90,6 +90,12 @@ class LightRAG:
 
     doc_status_storage: str = field(default="JsonDocStatusStorage")
     """Storage type for tracking document processing statuses."""
+    
+    # Path-based Retrieval
+    # ---
+    
+    use_pathrag: bool = field(default=False)
+    """If True, enables PathRAG's path-based retrieval for improved relationship finding."""
 
     # Logging (Deprecated, use setup_logger in utils.py instead)
     # ---
@@ -1364,6 +1370,20 @@ class LightRAG:
                 self.entities_vdb,
                 self.relationships_vdb,
                 self.chunks_vdb,
+                self.text_chunks,
+                param,
+                asdict(self),
+                hashing_kv=self.llm_response_cache,  # Directly use llm_response_cache
+                system_prompt=system_prompt,
+            )
+        elif param.mode == "path" or (self.use_pathrag and param.mode == "hybrid"):
+            # Import path_retrieval here to avoid circular imports
+            from .path_retrieval import path_query
+            response = await path_query(
+                query.strip(),
+                self.chunk_entity_relation_graph,
+                self.entities_vdb,
+                self.relationships_vdb,
                 self.text_chunks,
                 param,
                 asdict(self),
